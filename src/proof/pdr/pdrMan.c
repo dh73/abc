@@ -265,8 +265,9 @@ Pdr_Man_t * Pdr_ManStart( Aig_Man_t * pAig, Pdr_Par_t * pPars, Vec_Int_t * vPrio
         p->vPrio = vPrioInit;
     else if ( pPars->fFlopPrio )
         p->vPrio = Pdr_ManDeriveFlopPriorities2(p->pGia, 1);
-//    else if ( p->pPars->fNewXSim )
-//        p->vPrio = Vec_IntStartNatural( Aig_ManRegNum(pAig) );
+    else if ( p->pPars->fNewXSim )
+        // rIC3-style innards prioritization
+        p->vPrio = Vec_IntStartNatural( Aig_ManRegNum(pAig) );
     else 
         p->vPrio = Vec_IntStart( Aig_ManRegNum(pAig) );
     p->vLits    = Vec_IntAlloc( 100 );  // array of literals

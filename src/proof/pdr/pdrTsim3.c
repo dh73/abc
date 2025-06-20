@@ -6,7 +6,7 @@
 
   PackageName [Property driven reachability.]
 
-  Synopsis    [Improved ternary simulation.]
+  Synopsis    [Improved ternary simulation with rIC3-style innards.]
 
   Author      [Alan Mishchenko]
   
