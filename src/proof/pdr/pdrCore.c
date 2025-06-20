@@ -61,7 +61,8 @@ void Pdr_ManSetDefaultParams( Pdr_Par_t * pPars )
     pPars->nRandomSeed   = 91648253;  // value to seed the SAT solver with
     pPars->fTwoRounds     =       0;  // use two rounds for generalization
     pPars->fMonoCnf       =       0;  // monolythic CNF
-    pPars->fNewXSim       =       0;  // updated X-valued simulation
+    // enable improved ternary simulation with innards
+    pPars->fNewXSim       =       1;  // updated X-valued simulation
     pPars->fFlopPrio      =       0;  // use structural flop priorities
     pPars->fFlopOrder     =       0;  // order flops for 'analyze_final' during generalization
     pPars->fDumpInv       =       0;  // dump inductive invariant
