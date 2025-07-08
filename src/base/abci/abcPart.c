@@ -21,6 +21,7 @@
 #include "base/abc/abc.h"
 #include "base/main/main.h"
 #include "base/cmd/cmd.h"
+#include "map/mio/mio.h"
 
 #ifdef WIN32
 #include <process.h> 
@@ -1216,18 +1217,19 @@ void Abc_NtkFraigPartitionedTime( Abc_Ntk_t * pNtk, void * pParams )
   SeeAlso     []
 
 ***********************************************************************/
-void Abc_NtkStochSynthesis( Vec_Ptr_t * vWins, char * pScript )
+Vec_Int_t * Abc_NtkStochSynthesis( Vec_Ptr_t * vWins, char * pScript )
 {
+    Vec_Int_t * vGains = Vec_IntStartFull( Vec_PtrSize(vWins) );
     Abc_Ntk_t * pNtk, * pNew; int i;
     Vec_PtrForEachEntry( Abc_Ntk_t *, vWins, pNtk, i )
     {
-        Abc_FrameReplaceCurrentNetwork( Abc_FrameGetGlobalFrame(), Abc_NtkDup(pNtk) );
+        Abc_FrameReplaceCurrentNetwork( Abc_FrameGetGlobalFrame(), Abc_NtkDupDfs(pNtk) );
         if ( Abc_FrameIsBatchMode() )
         {
             if ( Cmd_CommandExecute(Abc_FrameGetGlobalFrame(), pScript) )
             {
                 Abc_Print( 1, "Something did not work out with the command \"%s\".\n", pScript );
-                return;
+                return vGains;
             }
         }
         else
@@ -1237,29 +1239,34 @@ void Abc_NtkStochSynthesis( Vec_Ptr_t * vWins, char * pScript )
             {
                 Abc_Print( 1, "Something did not work out with the command \"%s\".\n", pScript );
                 Abc_FrameSetBatchMode( 0 );
-                return;
+                return vGains;
             }
             Abc_FrameSetBatchMode( 0 );
         }
         pNew = Abc_FrameReadNtk(Abc_FrameGetGlobalFrame());
         if ( Abc_NtkIsMappedLogic(pNew) && Abc_NtkIsMappedLogic(pNtk) )
         {
-            if ( Abc_NtkGetMappedArea(pNew) < Abc_NtkGetMappedArea(pNtk) )
+            double Before = Abc_NtkGetMappedArea(pNtk);
+            double After  = Abc_NtkGetMappedArea(pNew);
+            if ( Before >= After )
             {
+                Vec_IntWriteEntry( vGains, i, (int)(Before - After) );
                 Abc_NtkDelete( pNtk );
-                pNtk = Abc_NtkDup( pNew );
+                pNtk = Abc_NtkDupDfs( pNew );
             }
         }
         else
         {
-            if ( Abc_NtkNodeNum(pNew) < Abc_NtkNodeNum(pNtk) )
+            if ( Abc_NtkNodeNum(pNtk) >= Abc_NtkNodeNum(pNew) )
             {
+                Vec_IntWriteEntry( vGains, i, Abc_NtkNodeNum(pNtk) - Abc_NtkNodeNum(pNew) );
                 Abc_NtkDelete( pNtk );
-                pNtk = Abc_NtkDup( pNew );
+                pNtk = Abc_NtkDupDfs( pNew );
             }
         }
         Vec_PtrWriteEntry( vWins, i, pNtk );
     }
+    return vGains;
 }
 
 
@@ -1284,13 +1291,18 @@ typedef struct StochSynData_t_
     int          TimeOut;
 } StochSynData_t;
 
-Abc_Ntk_t * Abc_NtkStochProcessOne( Abc_Ntk_t * p, char * pScript, int Rand, int TimeSecs )
+Abc_Ntk_t * Abc_NtkStochProcessOne( Abc_Ntk_t * p, char * pScript0, int Rand, int TimeSecs )
 {
-    Abc_Ntk_t * pNew;
-    char FileName[100], Command[1000];
-    sprintf( FileName, "%06x.blif", Rand );
-    Io_WriteBlif( p, FileName, 0, 0, 0 );
-    sprintf( Command, "./abc -q \"read %s; %s; write %s\"", FileName, pScript, FileName );
+    extern int Abc_NtkWriteToFile( char * pFileName, Abc_Ntk_t * pNtk );
+    extern Abc_Ntk_t * Abc_NtkReadFromFile( char * pFileName );
+    Abc_Ntk_t * pNew, * pTemp;
+    char FileName[100], Command[1000], PreCommand[500] = {0};
+    char * pLibFileName = Abc_NtkIsMappedLogic(p) ? Mio_LibraryReadFileName((Mio_Library_t *)p->pManFunc) : NULL;
+    if ( pLibFileName ) sprintf( PreCommand, "read_genlib %s; ", pLibFileName );
+    sprintf( FileName, "%06x.mm", Rand );
+    Abc_NtkWriteToFile( FileName, p );    
+    char * pScript = Abc_UtilStrsav( pScript0 );
+    sprintf( Command, "./abc -q \"%sread_mm %s; %s; write_mm %s\"", PreCommand[0] ? PreCommand : "", FileName, pScript, FileName );    
 #if defined(__wasm)
     if ( 1 )
 #else
@@ -1302,14 +1314,19 @@ Abc_Ntk_t * Abc_NtkStochProcessOne( Abc_Ntk_t * p, char * pScript, int Rand, int
         fprintf( stderr, "Sorry for the inconvenience.\n" );
         fflush( stdout );
         unlink( FileName );
-        return Abc_NtkDup(p);
-    }    
-    pNew = Io_ReadBlif( FileName, 0 );
+        ABC_FREE( pScript );
+        return Abc_NtkDupDfs(p);
+    }
+    ABC_FREE( pScript );
+    pNew = Abc_NtkReadFromFile( FileName );
     unlink( FileName );
-    if ( pNew && Abc_NtkNodeNum(pNew) < Abc_NtkNodeNum(p) )
+    if ( pNew && Abc_NtkGetMappedArea(pNew) <= Abc_NtkGetMappedArea(p) ) {
+        pNew = Abc_NtkDupDfs( pTemp = pNew );
+        Abc_NtkDelete( pTemp );
         return pNew;
+    }
     if ( pNew ) Abc_NtkDelete( pNew );
-    return Abc_NtkDup(p);
+    return Abc_NtkDupDfs(p);
 }
 
 int Abc_NtkStochProcess1( void * p )
@@ -1321,18 +1338,16 @@ int Abc_NtkStochProcess1( void * p )
     return 1;
 }
 
-Vec_Ptr_t * Abc_NtkStochProcess( Vec_Ptr_t * vWins, char * pScript, int nProcs, int TimeSecs, int fVerbose )
+Vec_Int_t * Abc_NtkStochProcess( Vec_Ptr_t * vWins, char * pScript, int nProcs, int TimeSecs, int fVerbose )
 {
     if ( nProcs <= 2 ) {
-        if ( fVerbose )
-            printf( "Running non-concurrent synthesis.\n" ), fflush(stdout);            
-        Abc_NtkStochSynthesis( vWins, pScript );
-        return NULL;
+        return Abc_NtkStochSynthesis( vWins, pScript );
     }
+    Vec_Int_t * vGains = Vec_IntStartFull( Vec_PtrSize(vWins) );
     StochSynData_t * pData = ABC_CALLOC( StochSynData_t, Vec_PtrSize(vWins) );
     Vec_Ptr_t * vData = Vec_PtrAlloc( Vec_PtrSize(vWins) ); 
     Abc_Ntk_t * pNtk; int i;
-    Abc_Random(1);
+    //Abc_Random(1);
     Vec_PtrForEachEntry( Abc_Ntk_t *, vWins, pNtk, i ) {
         pData[i].pIn     = pNtk;
         pData[i].pOut    = NULL;
@@ -1341,17 +1356,19 @@ Vec_Ptr_t * Abc_NtkStochProcess( Vec_Ptr_t * vWins, char * pScript, int nProcs, 
         pData[i].TimeOut = TimeSecs;
         Vec_PtrPush( vData, pData+i );
     }
-    if ( fVerbose )
-        printf( "Running concurrent synthesis with %d processes.\n", nProcs ), fflush(stdout);
     Util_ProcessThreads( Abc_NtkStochProcess1, vData, nProcs, TimeSecs, fVerbose );
     // replace old AIGs by new AIGs
     Vec_PtrForEachEntry( Abc_Ntk_t *, vWins, pNtk, i ) {
+        if ( Abc_NtkIsMappedLogic(pNtk) )
+            Vec_IntWriteEntry( vGains, i, (int)(Abc_NtkGetMappedArea(pNtk) - Abc_NtkGetMappedArea(pData[i].pOut)) );
+        else
+            Vec_IntWriteEntry( vGains, i, Abc_NtkNodeNum(pNtk) - Abc_NtkNodeNum(pData[i].pOut) );
         Abc_NtkDelete( pNtk );
         Vec_PtrWriteEntry( vWins, i, pData[i].pOut );
     }
     Vec_PtrFree( vData );
     ABC_FREE( pData );
-    return NULL;
+    return vGains;
 }
 
 /**Function*************************************************************
@@ -1433,7 +1450,7 @@ void Abc_NtkInsertPartitions_rec( Abc_Ntk_t * pNew, Abc_Obj_t * pObj, Vec_Int_t 
     int iWin = Vec_IntEntry(vMap, Abc_ObjId(pObj));
     Vec_Int_t * vIns  = (Vec_Int_t *)Vec_PtrEntry(vvIns, iWin);
     Vec_Int_t * vOuts = (Vec_Int_t *)Vec_PtrEntry(vvOuts, iWin);
-    Abc_Ntk_t * pWin  = (Abc_Ntk_t *)Vec_PtrEntry(vWins, iWin);
+    Abc_Ntk_t * pWin  = (Abc_Ntk_t *)Vec_PtrEntry(vWins, iWin); 
     // build transinvite fanins of window inputs
     Abc_Obj_t * pNode; int i;
     Abc_NtkForEachObjVec( vIns, pObj->pNtk, pNode, i ) {
@@ -1450,8 +1467,48 @@ void Abc_NtkInsertPartitions_rec( Abc_Ntk_t * pNew, Abc_Obj_t * pObj, Vec_Int_t 
         pNode->pCopy = Abc_ObjFanin0(Abc_NtkPo(pWin, i))->pCopy;
     assert( pObj->pCopy );
 }
-Abc_Ntk_t * Abc_NtkInsertPartitions( Abc_Ntk_t * p, Vec_Ptr_t * vvIns, Vec_Ptr_t * vvOuts, Vec_Ptr_t * vWins )
+Abc_Ntk_t * Abc_NtkInsertPartitions( Abc_Ntk_t * p, Vec_Ptr_t * vvIns, Vec_Ptr_t * vvNodes, Vec_Ptr_t * vvOuts, Vec_Ptr_t * vWins, int fOverlap, Vec_Int_t * vGains )
 {
+    if ( vvIns == NULL ) {
+        assert( vvOuts == NULL );
+        assert( Vec_PtrSize(vWins) == 1 );
+        return Abc_NtkDupDfs( (Abc_Ntk_t *)Vec_PtrEntry(vWins, 0) );        
+    }
+    if ( fOverlap ) {
+        Vec_Ptr_t * vvInsNew  = Vec_PtrAlloc( 10 );
+        Vec_Ptr_t * vvOutsNew = Vec_PtrAlloc( 10 );
+        Vec_Ptr_t * vvWinsNew = Vec_PtrAlloc( 10 );
+        Abc_NtkIncrementTravId( p );
+        while ( 1 ) {
+            int i, Gain, iEntry = Vec_IntArgMax(vGains);
+            if ( iEntry == -1 || Vec_IntEntry(vGains, iEntry) < 0 )
+                break;
+            //printf( "Selecting partition %d with gain %d.\n", iEntry, Vec_IntEntry(vGains, iEntry) );
+            Vec_IntWriteEntry( vGains, iEntry, -1 );
+            Vec_PtrPush( vvInsNew,  Vec_IntDup((Vec_Int_t *)Vec_PtrEntry(vvIns,  iEntry)) );
+            Vec_PtrPush( vvOutsNew, Vec_IntDup((Vec_Int_t *)Vec_PtrEntry(vvOuts, iEntry)) );
+            Vec_PtrPush( vvWinsNew, Abc_NtkDupDfs((Abc_Ntk_t *)Vec_PtrEntry(vWins, iEntry)) );
+            extern void Abc_NtKMarkTfiTfo( Vec_Int_t * vOne, Abc_Ntk_t * pNtk );
+            Abc_NtKMarkTfiTfo( (Vec_Int_t *)Vec_PtrEntryLast(vvInsNew), p );
+            Vec_IntForEachEntry( vGains, Gain, i ) {
+                if ( Gain < 0 )
+                    continue;
+                Vec_Int_t * vNodes  = (Vec_Int_t *)Vec_PtrEntry(vvNodes, i);
+                Abc_Obj_t * pNode; int j;
+                Abc_NtkForEachObjVec( vNodes, p, pNode, j )
+                    if ( Abc_NodeIsTravIdCurrent(pNode) )
+                        break;
+                if ( j < Vec_IntSize(vNodes) )
+                    Vec_IntWriteEntry( vGains, i, -1 );
+            }         
+        }
+        ABC_SWAP( Vec_Ptr_t, *vvInsNew,  *vvIns  );
+        ABC_SWAP( Vec_Ptr_t, *vvOutsNew, *vvOuts );
+        ABC_SWAP( Vec_Ptr_t, *vvWinsNew, *vWins  );
+        Vec_PtrFreeFunc( vvInsNew,   (void (*)(void *)) Vec_IntFree );
+        Vec_PtrFreeFunc( vvOutsNew,  (void (*)(void *)) Vec_IntFree );           
+        Vec_PtrFreeFunc( vvWinsNew,  (void (*)(void *)) Abc_NtkDelete );
+    }
     // check consistency of input data
     Abc_Ntk_t * pNew, * pTemp; Abc_Obj_t * pObj; int i, k, iNode;
     Vec_PtrForEachEntry( Abc_Ntk_t *, vWins, pTemp, i ) {
@@ -1462,10 +1519,12 @@ Abc_Ntk_t * Abc_NtkInsertPartitions( Abc_Ntk_t * p, Vec_Ptr_t * vvIns, Vec_Ptr_t
         assert( !Abc_NtkWindowCheckTopoError(p, vIns, vOuts) );        
     }
     // create mapping of window outputs into window IDs
-    Vec_Int_t * vMap = Vec_IntStartFull( Abc_NtkObjNumMax(p)+1 ), * vOuts;
+    Vec_Int_t * vMap = Vec_IntStartFull( Abc_NtkObjNumMax(p) ), * vOuts;
     Vec_PtrForEachEntry( Vec_Int_t *, vvOuts, vOuts, i )
-        Vec_IntForEachEntry( vOuts, iNode, k )
+        Vec_IntForEachEntry( vOuts, iNode, k ) {
+            assert( Vec_IntEntry(vMap, iNode) == -1 );
             Vec_IntWriteEntry( vMap, iNode, i );
+        }
     Abc_NtkCleanCopy( p );
     pNew = Abc_NtkStartFrom( p, p->ntkType, p->ntkFunc );
     pNew->pManFunc = p->pManFunc;
@@ -1497,6 +1556,16 @@ void Abc_ObjDfsMark_rec( Abc_Obj_t * p )
     Abc_NodeSetTravIdCurrent( p );
     Abc_ObjForEachFanin( p, pFanin, i )
         Abc_ObjDfsMark_rec( pFanin );
+}
+void Abc_ObjDfsMark2_rec( Abc_Obj_t * p )
+{
+    Abc_Obj_t * pFanout; int i;
+    assert( !p->fMarkA );
+    if ( Abc_NodeIsTravIdCurrent( p ) )
+        return;
+    Abc_NodeSetTravIdCurrent( p );
+    Abc_ObjForEachFanout( p, pFanout, i )
+        Abc_ObjDfsMark2_rec( pFanout );
 }
 Vec_Int_t * Abc_NtkDeriveWinNodes( Abc_Ntk_t * pNtk, Vec_Int_t * vIns, Vec_Wec_t * vStore )
 {
@@ -1580,18 +1649,19 @@ Vec_Ptr_t * Abc_NtkDeriveWinOutsAll( Abc_Ntk_t * pNtk, Vec_Ptr_t * vvNodes )
         Vec_PtrPush( vvOuts, Abc_NtkDeriveWinOuts(pNtk, vNodes) );
     return vvOuts;
 }
-void Abc_NtkPermuteLevel( Abc_Ntk_t * pNtk )
+void Abc_NtkPermuteLevel( Abc_Ntk_t * pNtk, int Level )
 {
-    Abc_Obj_t * pObj, * pFanin; int i, k;
-    Abc_NtkLevelReverse( pNtk );
-    Abc_NtkForEachNode( pNtk, pObj, i )
-    {
-        int LevelMin = 0, LevelMax = Abc_ObjLevel(pObj);
-        Abc_ObjForEachFanin( pObj, pFanin, k )
-            LevelMin = Abc_MaxInt( LevelMin, Abc_ObjLevel(pFanin) );
+    Abc_Obj_t * pObj, * pNext; int i, k;
+    Abc_NtkForEachNode( pNtk, pObj, i ) {
+        int LevelMin = Abc_ObjLevel(pObj), LevelMax = Level + 1;
+        Abc_ObjForEachFanout( pObj, pNext, k )
+            if ( Abc_ObjIsNode(pNext) )
+                LevelMax = Abc_MinInt( LevelMax, Abc_ObjLevel(pNext) );
+        if ( LevelMin == LevelMax ) continue;
         assert( LevelMin < LevelMax );
-        // randomly set level between LevelMin + 1 and LevelMax
-        pObj->Level = LevelMin + 1 + (Abc_Random(0) % (LevelMax - LevelMin));
+        // randomly set level between LevelMin and LevelMax-1
+        pObj->Level = LevelMin + (Abc_Random(0) % (LevelMax - LevelMin));
+        assert( pObj->Level < LevelMax );
     }
 }
 Vec_Int_t * Abc_NtkCollectObjectsPointedTo( Abc_Ntk_t * pNtk, int Level )
@@ -1610,7 +1680,7 @@ Vec_Int_t * Abc_NtkCollectObjectsPointedTo( Abc_Ntk_t * pNtk, int Level )
     }
     Abc_NtkForEachCo( pNtk, pObj, i ) {
         pFanin = Abc_ObjFanin0(pObj);
-        if ( Abc_ObjIsNode(pFanin) && Abc_ObjLevel(pFanin) <= Level && !Abc_NodeIsTravIdCurrent(pFanin) ) {
+        if ( Abc_ObjLevel(pFanin) <= Level && !Abc_NodeIsTravIdCurrent(pFanin) && Abc_ObjFaninNum(pFanin) > 0 ) {
             Abc_NodeSetTravIdCurrent(pFanin);
             Vec_IntPush( vRes, Abc_ObjId(pFanin) );
         }
@@ -1625,7 +1695,7 @@ Vec_Wec_t * Abc_NtkCollectObjectsWithSuppLimit( Abc_Ntk_t * pNtk, int Level, int
     Vec_Wec_t * vSupps   = Vec_WecStart( Vec_IntSize(vBelow) );
     Vec_Int_t * vSuppIds = Vec_IntStartFull( Abc_NtkObjNumMax(pNtk)+1 );
     Vec_Int_t * vTemp[2] = { Vec_IntAlloc(100), Vec_IntAlloc(100) };
-    Abc_Obj_t * pObj, * pFanin; int i, k;
+    Abc_Obj_t * pObj, * pFanin; int i, k, Count = 0;
     Abc_NtkForEachObjVec( vBelow, pNtk, pObj, i ) {
         Vec_IntWriteEntry( vSuppIds, Abc_ObjId(pObj), i );
         Vec_IntPush( Vec_WecEntry(vSupps, i), Abc_ObjId(pObj) );
@@ -1641,8 +1711,10 @@ Vec_Wec_t * Abc_NtkCollectObjectsWithSuppLimit( Abc_Ntk_t * pNtk, int Level, int
             Vec_IntTwoMerge2( Vec_WecEntry(vSupps, iSuppId), vTemp[0], vTemp[1] );
             ABC_SWAP( Vec_Int_t *, vTemp[0], vTemp[1] );
         }
-        if ( k < Abc_ObjFaninNum(pObj) || Vec_IntSize(vTemp[0]) > nSuppMax )
+        if ( k < Abc_ObjFaninNum(pObj) || Vec_IntSize(vTemp[0]) > nSuppMax ) {
+            Count++;
             continue;
+        }
         Vec_IntWriteEntry( vSuppIds, Abc_ObjId(pObj), Vec_WecSize(vSupps) );
         Vec_IntAppend( Vec_WecPushLevel(vSupps), vTemp[0] );
     }
@@ -1658,11 +1730,15 @@ Vec_Wec_t * Abc_NtkCollectObjectsWithSuppLimit( Abc_Ntk_t * pNtk, int Level, int
     Abc_NtkForEachNode( pNtk, pObj, i )
         if ( Abc_ObjLevel(pObj) > Level && Vec_IntEntry(vSuppIds, i) >= 0 && !Abc_NodeIsTravIdCurrent(pObj) ) {
             Vec_Int_t * vSupp = Vec_WecEntry( vSupps, Vec_IntEntry(vSuppIds, i) );
+            if ( Vec_IntSize(vSupp) < 4 )
+                continue;
             Vec_Int_t * vThis = Vec_WecPushLevel( vResSupps );
             Vec_IntGrow( vThis, Vec_IntSize(vSupp) + 1 );
             Vec_IntAppend( vThis, vSupp );
             //Vec_IntPush( vThis, Abc_ObjId(pObj) );
         }
+    //printf( "Inputs = %d. Nodes with %d-support = %d. Nodes with larger support = %d. Selected outputs = %d.\n", 
+    //    Vec_IntSize(vBelow), nSuppMax, Vec_WecSize(vSupps), Count, Vec_WecSize(vResSupps) );
     Vec_WecFree( vSupps );
     Vec_IntFree( vSuppIds );
     Vec_IntFree( vBelow );
@@ -1679,16 +1755,59 @@ void Abc_NtKSelectRemove( Vec_Wec_t * vSupps, Vec_Int_t * vOne )
             Vec_IntClear( vLevel );
     Vec_WecRemoveEmpty( vSupps );
 }
-Vec_Ptr_t * Abc_NtkDeriveWinInsAll( Vec_Wec_t * vSupps, int nSuppMax )
+// marks TFI/TFO of this one
+void Abc_NtKMarkTfiTfo( Vec_Int_t * vOne, Abc_Ntk_t * pNtk )
+{
+    int i; Abc_Obj_t * pObj;
+    Abc_NtkForEachObjVec( vOne, pNtk, pObj, i ) {
+        //Abc_NodeSetTravIdPrevious(pObj);
+        //Abc_ObjDfsMark_rec( pObj );
+        Abc_NodeSetTravIdPrevious(pObj);
+        Abc_ObjDfsMark2_rec( pObj );
+    }
+}
+// removes all supports that overlap with the TFI/TFO cones of this one
+void Abc_NtKSelectRemove2( Vec_Wec_t * vSupps, Vec_Int_t * vOne, Abc_Ntk_t * pNtk )
+{
+    Vec_Int_t * vLevel; int i, k; Abc_Obj_t * pObj;
+    Abc_NtkForEachObjVec( vOne, pNtk, pObj, i ) {
+        Abc_NodeSetTravIdPrevious(pObj);
+        Abc_ObjDfsMark_rec( pObj );
+        Abc_NodeSetTravIdPrevious(pObj);
+        Abc_ObjDfsMark2_rec( pObj );
+    }
+    Vec_WecForEachLevel( vSupps, vLevel, i ) {
+        Abc_NtkForEachObjVec( vLevel, pNtk, pObj, k ) 
+            if ( Abc_NodeIsTravIdCurrent(pObj) )
+                break;
+        if ( k < Vec_IntSize(vLevel) )
+            Vec_IntClear( vLevel );
+    }
+    Vec_WecRemoveEmpty( vSupps );
+}
+// removes all supports that are contained in this one
+void Abc_NtKSelectRemove3( Vec_Wec_t * vSupps, Vec_Int_t * vOne )
+{
+    Vec_Int_t * vLevel; int i;
+    Vec_WecForEachLevel( vSupps, vLevel, i )
+        if ( Vec_IntTwoCountCommon(vLevel, vOne) == Vec_IntSize(vLevel) )
+            Vec_IntClear( vLevel );
+    Vec_WecRemoveEmpty( vSupps );
+}
+Vec_Ptr_t * Abc_NtkDeriveWinInsAll( Vec_Wec_t * vSupps, int nSuppMax, Abc_Ntk_t * pNtk, int fOverlap )
 {
     Vec_Ptr_t * vRes = Vec_PtrAlloc( 100 );
+    Abc_NtkIncrementTravId( pNtk );
     while ( Vec_WecSize(vSupps) > 0 ) {
         int i, Item, iRand = Abc_Random(0) % Vec_WecSize(vSupps);
         Vec_Int_t * vLevel, * vLevel2 = Vec_WecEntry( vSupps, iRand );
         Vec_Int_t * vCopy = Vec_IntDup( vLevel2 );
         if ( Vec_IntSize(vLevel2) == nSuppMax ) {
             Vec_PtrPush( vRes, vCopy );
-            Abc_NtKSelectRemove( vSupps, vCopy );
+            if ( fOverlap )
+                Abc_NtKSelectRemove3( vSupps, vCopy );
+            else
+                Abc_NtKSelectRemove2( vSupps, vCopy, pNtk );
             continue;
         }
         // find another support, which maximizes the union but does not exceed nSuppMax
@@ -1706,7 +1825,10 @@ Vec_Ptr_t * Abc_NtkDeriveWinInsAll( Vec_Wec_t * vSupps, int nSuppMax )
         Vec_IntForEachEntry( vLevel, Item, i )
             Vec_IntPushUniqueOrder( vCopy, Item );
         Vec_PtrPush( vRes, vCopy );
-        Abc_NtKSelectRemove( vSupps, vCopy );
+        if ( fOverlap )
+            Abc_NtKSelectRemove3( vSupps, vCopy );
+        else
+            Abc_NtKSelectRemove2( vSupps, vCopy, pNtk );
     }
     return vRes;
 }
@@ -1731,7 +1853,6 @@ Abc_Ntk_t * Abc_NtkDupWindow( Abc_Ntk_t * p, Vec_Int_t * vIns, Vec_Int_t * vNode
         pObj->pCopy = NULL;
     Abc_NtkAddDummyPiNames( pNew );
     Abc_NtkAddDummyPoNames( pNew );
-    //Abc_NtkPrint( pNew );
     return pNew;
 }
 Vec_Ptr_t * Abc_NtkDupWindows( Abc_Ntk_t * pNtk, Vec_Ptr_t * vvIns, Vec_Ptr_t * vvNodes, Vec_Ptr_t * vvOuts )
@@ -1750,14 +1871,24 @@ Vec_Ptr_t * Abc_NtkDupWindows( Abc_Ntk_t * pNtk, Vec_Ptr_t * vvIns, Vec_Ptr_t * 
     }
     return vWins;
 }
-Vec_Ptr_t * Abc_NtkExtractPartitions( Abc_Ntk_t * pNtk, int Iter, int nSuppMax, Vec_Ptr_t ** pvIns, Vec_Ptr_t ** pvOuts, Vec_Ptr_t ** pvNodes )
+Vec_Ptr_t * Abc_NtkExtractPartitions( Abc_Ntk_t * pNtk, int Iter, int nSuppMax, Vec_Ptr_t ** pvIns, Vec_Ptr_t ** pvOuts, Vec_Ptr_t ** pvNodes, int fOverlap )
 {
-    int LevelMax = Abc_NtkLevel(pNtk);
-    int LevelCut = LevelMax > 8 ? (Iter % (LevelMax - 6)) : 0;
-    //Abc_NtkPermuteLevel( pNtk );
+    // if ( Abc_NtkCiNum(pNtk) <= nSuppMax ) {
+    //     Vec_Ptr_t * vWins = Vec_PtrAlloc( 1 );
+    //     Vec_PtrPush( vWins, Abc_NtkDupDfs(pNtk) );
+    //     *pvIns = *pvOuts = *pvNodes = NULL;
+    //     return vWins;
+    // }
+    // int iUseRevL = Iter % 3 == 0 ? 0 : Abc_Random(0) & 1;
+    int iUseRevL = Abc_Random(0) & 1;
+    int LevelMax = iUseRevL ? Abc_NtkLevelR(pNtk) : Abc_NtkLevel(pNtk);
+    // int LevelCut = Iter % 3 == 0 ? 0 : LevelMax > 8 ? 2 + (Abc_Random(0) % (LevelMax - 4)) : 0;
+    int LevelCut = LevelMax > 8 ? (Abc_Random(0) % (LevelMax - 4)) : 0;
+    // printf( "Using %s cut level %d (out of %d)\n", iUseRevL ? "reverse": "direct", LevelCut, LevelMax );
+    // Abc_NtkPermuteLevel( pNtk, LevelMax );
     Vec_Wec_t * vStore = Vec_WecStart( LevelMax+1 );
     Vec_Wec_t * vSupps = Abc_NtkCollectObjectsWithSuppLimit( pNtk, LevelCut, nSuppMax );
-    Vec_Ptr_t * vIns   = Abc_NtkDeriveWinInsAll( vSupps, nSuppMax );
+    Vec_Ptr_t * vIns   = Abc_NtkDeriveWinInsAll( vSupps, nSuppMax, pNtk, fOverlap );
     Vec_Ptr_t * vNodes = Abc_NtkDeriveWinNodesAll( pNtk, vIns, vStore );
     Vec_Ptr_t * vOuts  = Abc_NtkDeriveWinOutsAll( pNtk, vNodes );
     Vec_Ptr_t * vWins  = Abc_NtkDupWindows( pNtk, vIns, vNodes, vOuts );
@@ -1780,7 +1911,7 @@ Vec_Ptr_t * Abc_NtkExtractPartitions( Abc_Ntk_t * pNtk, int Iter, int nSuppMax, 
   SeeAlso     []
 
 ***********************************************************************/
-void Abc_NtkStochMap( int nSuppMax, int nIters, int TimeOut, int Seed, int fVerbose, char * pScript, int nProcs )
+void Abc_NtkStochMap( int nSuppMax, int nIters, int TimeOut, int Seed, int fOverlap, int fVerbose, char * pScript, int nProcs )
 {
     abctime clkStart    = Abc_Clock(); int i;
     abctime nTimeToStop = TimeOut ? Abc_Clock() + TimeOut * CLOCKS_PER_SEC : 0;
@@ -1789,30 +1920,35 @@ void Abc_NtkStochMap( int nSuppMax, int nIters, int TimeOut, int Seed, int fVerb
     Abc_Random(1);
     for ( i = 0; i < 10+Seed; i++ )
         Abc_Random(0);
-    if ( fVerbose )
-    printf( "Running %d iterations of script \"%s\".\n", nIters, pScript );
+    if ( fVerbose ) {
+        printf( "Running %d iterations of the script \"%s\"", nIters, pScript );
+        if ( nProcs > 2 )
+            printf( " using %d concurrent threads.\n", nProcs-1 );
+        else
+            printf( " without concurrency.\n" );
+        fflush(stdout);
+    }
     Vec_Ptr_t * vIns = NULL, * vOuts = NULL, * vNodes = NULL;
     for ( i = 0; i < nIters; i++ )
     {
         abctime clk = Abc_Clock();
         Abc_Ntk_t * pNtk   = Abc_NtkDupDfs(Abc_FrameReadNtk(Abc_FrameGetGlobalFrame()));
-        Vec_Ptr_t * vWins  = Abc_NtkExtractPartitions( pNtk, i, nSuppMax, &vIns, &vOuts, &vNodes );
-        Vec_Ptr_t * vOpts  = Abc_NtkStochProcess( vWins, pScript, nProcs, 0, 0 );
-        Abc_Ntk_t * pNew   = Abc_NtkInsertPartitions( pNtk, vIns, vOuts, vWins );
+        Vec_Ptr_t * vWins  = Abc_NtkExtractPartitions( pNtk, i, nSuppMax, &vIns, &vOuts, &vNodes, fOverlap );
+        Vec_Int_t * vGains = Abc_NtkStochProcess( vWins, pScript, nProcs, 0, 0 ); int nPartsInit = Vec_PtrSize(vWins);
+        Abc_Ntk_t * pNew   = Abc_NtkInsertPartitions( pNtk, vIns, vNodes, vOuts, vWins, fOverlap, vGains );
         Abc_FrameReplaceCurrentNetwork( Abc_FrameGetGlobalFrame(), pNew );
         if ( fVerbose )
-        printf( "Iteration %3d : Using %3d partitions. Reducing area from %.2f to %.2f.  ", 
-            i, Vec_PtrSize(vWins), Abc_NtkGetMappedArea(pNtk), Abc_NtkGetMappedArea(pNew) ); 
+        printf( "Iteration %3d : Using %3d -> %3d partitions. Reducing area from %.2f to %.2f.  ", 
+            i, nPartsInit, Vec_PtrSize(vWins), Abc_NtkGetMappedArea(pNtk), Abc_NtkGetMappedArea(pNew) ); 
         if ( fVerbose )
         Abc_PrintTime( 0, "Time", Abc_Clock() - clk );
         // cleanup
         Abc_NtkDelete( pNtk );
         Vec_PtrFreeFunc( vWins,  (void (*)(void *)) Abc_NtkDelete );
-        //Vec_PtrFreeFunc( vOpts, (void (*)(void *)) Abc_NtkDelete );
-        vOpts = NULL;
-        Vec_PtrFreeFunc( vIns,   (void (*)(void *)) Vec_IntFree );
-        Vec_PtrFreeFunc( vOuts,  (void (*)(void *)) Vec_IntFree );                
-        Vec_PtrFreeFunc( vNodes, (void (*)(void *)) Vec_IntFree );                
+        Vec_IntFreeP( &vGains );
+        if ( vIns )   Vec_PtrFreeFunc( vIns,   (void (*)(void *)) Vec_IntFree );
+        if ( vOuts )  Vec_PtrFreeFunc( vOuts,  (void (*)(void *)) Vec_IntFree );                
+        if ( vNodes ) Vec_PtrFreeFunc( vNodes, (void (*)(void *)) Vec_IntFree );                
         if ( nTimeToStop && Abc_Clock() > nTimeToStop )
         {
             printf( "Runtime limit (%d sec) is reached after %d iterations.\n", TimeOut, i );
@@ -1821,7 +1957,7 @@ void Abc_NtkStochMap( int nSuppMax, int nIters, int TimeOut, int Seed, int fVerb
     }
     aEnd = Abc_NtkGetMappedArea(Abc_FrameReadNtk(Abc_FrameGetGlobalFrame()));
     if ( fVerbose )
-    printf( "Cumulatively reduced area by %.2f %% after %d iterations.  ", 100.0*(aBeg - aEnd)/aBeg, nIters );
+    printf( "Cumulatively reduced area by %.2f %% after %d iterations.  ", 100.0*(aBeg - aEnd)/Abc_MaxFloat(aBeg, (float)1.0), nIters );
     if ( fVerbose )
     Abc_PrintTime( 0, "Total time", Abc_Clock() - clkStart );
 }
