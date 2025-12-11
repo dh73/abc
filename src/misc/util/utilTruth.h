@@ -230,7 +230,8 @@ static inline int  Abc_TtHexDigitNum( int nVars ) { return nVars <= 2 ? 1 : 1 <<
   SeeAlso     []
 
 ***********************************************************************/
-static inline word Abc_Tt6Mask( int nBits )       { assert( nBits >= 0 && nBits <= 64 ); return (~(word)0) >> (64-nBits);        }
+static inline word Abc_Tt6MaskI( int iBit )       { assert( iBit >= 0  && iBit  <= 64 ); return ((word)1) << iBit;         }
+static inline word Abc_Tt6Mask( int nBits )       { assert( nBits >= 0 && nBits <= 64 ); return (~(word)0) >> (64-nBits);  }
 static inline void Abc_TtMask( word * pTruth, int nWords, int nBits )
 { 
     int w;
@@ -1581,6 +1582,43 @@ static inline int Abc_TtReadHexNumber( word * pTruth, char * pString )
 
 /**Function*************************************************************
 
+  Synopsis    [Reads the integer number as a binary string.]
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+static inline int Abc_TtReadBin( word * pWords, int nWords, char * pString )
+{
+    int i, Len = (int)strlen(pString), nWords2 = (Len+63)/64;
+    assert( nWords2 <= nWords );
+    memset( pWords, 0, sizeof(word)*nWords );
+    for ( i = 0; i < Len; i++ )
+        if ( pString[i] == '1' )
+            Abc_TtSetBit(pWords, i);
+        else if ( pString[i] != '0' )
+            return 0;
+    return 1;
+}
+static inline word Abc_TtReadBin64( char * pString )
+{
+    word Word = 0;
+    int Len = (int)strlen(pString);
+    assert( Len <= 64 );
+    int Res = Abc_TtReadBin( &Word, 1, pString );
+    if ( Res == 0 ) {
+        printf( "Reading binary string \"%s\" has failed.\n", pString );
+        Word = ~(word)0;
+    }
+    return Word;
+}
+
+
+/**Function*************************************************************
+
   Synopsis    []
 
   Description []
@@ -1602,7 +1640,7 @@ static inline void Abc_TtPrintBits2( word * pTruth, int nBits )
     int k;
     for ( k = nBits-1; k >= 0; k-- )
         printf( "%d", Abc_InfoHasBit( (unsigned *)pTruth, k ) );
-    printf( "\n" );
+    //printf( "\n" );
 }
 static inline void Abc_TtPrintBinary( word * pTruth, int nVars )
 {
@@ -1986,6 +2024,20 @@ static inline void Abc_TtSwapVars( word * pTruth, int nVars, int iVar, int jVar 
                     ABC_SWAP( word, pTruth[iStep + i + j], pTruth[jStep + i + j] );
         return;
     }    
+}
+// exchanges places of v1 and v2
+static inline void Abc_TtExchangeVars( word * pF, int nVars, int * V2P, int * P2V, int v1, int v2 )
+{
+    int iPlace0 = V2P[v1];
+    int iPlace1 = V2P[v2];
+    if ( iPlace0 == iPlace1 )
+        return;
+    Abc_TtSwapVars( pF, nVars, iPlace0, iPlace1 );
+    V2P[P2V[iPlace0]] = iPlace1;
+    V2P[P2V[iPlace1]] = iPlace0;
+    P2V[iPlace0] ^= P2V[iPlace1];
+    P2V[iPlace1] ^= P2V[iPlace0];
+    P2V[iPlace0] ^= P2V[iPlace1];
 }
 // moves one var (v) to the given position (p)
 static inline void Abc_TtMoveVar( word * pF, int nVars, int * V2P, int * P2V, int v, int p )

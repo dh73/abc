@@ -67,6 +67,7 @@ struct Abc_Frame_t_
     st__table *      tAliases;      // the alias table
     st__table *      tFlags;        // the flag table
     Vec_Ptr_t *     aHistory;      // the command history
+    int             iStartHistory; // beginning of the new history file
     // the functionality
     Abc_Ntk_t *     pNtkCur;       // the current network
     Abc_Ntk_t *     pNtkBestDelay; // the current network
@@ -98,7 +99,8 @@ struct Abc_Frame_t_
     void *          pManDsd;       // decomposition manager
     void *          pManDsd2;      // decomposition manager
     // libraries for mapping
-    void *          pLibLut;       // the current LUT library
+    void *          pLibLut[ABC_LUT_LIBS]; // the current LUT library
+    void *          pLibCell;      // the current cell library
     void *          pLibBox;       // the current box library
     void *          pLibGen;       // the current genlib
     void *          pLibGen2;      // the current genlib

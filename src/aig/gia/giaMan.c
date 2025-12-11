@@ -106,6 +106,7 @@ void Gia_ManStop( Gia_Man_t * p )
     Vec_IntFreeP( &p->vCofVars );
     Vec_IntFreeP( &p->vIdsOrig );
     Vec_IntFreeP( &p->vIdsEquiv );
+    Vec_IntFreeP( &p->vEquLitIds );
     Vec_IntFreeP( &p->vLutConfigs );
     Vec_IntFreeP( &p->vEdgeDelay );
     Vec_IntFreeP( &p->vEdgeDelayR );
@@ -142,6 +143,7 @@ void Gia_ManStop( Gia_Man_t * p )
     Vec_IntFreeP( &p->vCellMapping );
     Vec_IntFreeP( &p->vPacking );
     Vec_IntFreeP( &p->vConfigs );
+    Vec_StrFreeP( &p->vConfigs2 );
     ABC_FREE( p->pCellStr );
     Vec_FltFreeP( &p->vInArrs );
     Vec_FltFreeP( &p->vOutReqs );
@@ -640,7 +642,7 @@ void Gia_ManPrintStats( Gia_Man_t * p, Gps_Par_t * pPars )
     }
     if ( pPars && pPars->fSlacks )
         Gia_ManDfsSlacksPrint( p );
-    if ( Gia_ManHasMapping(p) && pPars->fMapOutStats )
+    if ( Gia_ManHasMapping(p) && pPars && pPars->fMapOutStats )
         Gia_ManPrintOutputLutStats( p );
 }
 
@@ -2372,6 +2374,38 @@ Gia_Man_t * Gia_GenPutOnTop( char ** pFNames, int nFNames )
     Gia_ManStop( pTemp );
     return pNew;
 }
+
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+Gia_Man_t * Gia_ManDupFromArray( int * pObjs, int nObjs, int nIns, int nLatches, int nOuts, int nAnds )
+{
+    Gia_Man_t * pNew = Gia_ManStart( nObjs ); int i;
+    for ( i = 0; i < nIns + nLatches; i++ )
+        Gia_ManAppendCi(pNew);
+    for ( i = 0; i < nAnds; i++ )
+    {
+        int uLit  = 2*(1+nIns+nLatches+i);
+        int uLit0 = pObjs[uLit+0];
+        int uLit1 = pObjs[uLit+1];
+        int uLit2 = Gia_ManAppendAnd( pNew, uLit0, uLit1 );
+        assert( uLit2 == uLit );
+    }
+    for ( i = 0; i < nOuts + nLatches; i++ )
+        Gia_ManAppendCo( pNew, pObjs[2*(nObjs-nOuts-nLatches+i)+0] );
+    Gia_ManSetRegNum(pNew, nLatches);
+    return pNew;
+}
+
 
 ////////////////////////////////////////////////////////////////////////
 ///                       END OF FILE                                ///

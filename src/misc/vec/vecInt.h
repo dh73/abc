@@ -1278,6 +1278,16 @@ static inline Vec_Int_t * Vec_IntInvert( Vec_Int_t * p, int Fill )
             Vec_IntWriteEntry( vRes, Entry, i );
     return vRes;
 }
+static inline Vec_Int_t * Vec_IntInvertSize( Vec_Int_t * p, int Size, int Fill ) 
+{
+    Vec_Int_t * vMap = Vec_IntAlloc( 0 );
+    Vec_IntFill( vMap, Size, Fill );
+    int i, k;
+    Vec_IntForEachEntry( p, i, k )
+        if ( i != Fill )
+            Vec_IntWriteEntry( vMap, i, k );
+    return vMap;
+}
 
 /**Function*************************************************************
 
@@ -1937,16 +1947,16 @@ static inline int Vec_IntTwoRemove( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
 
 /**Function*************************************************************
 
-  Synopsis    [Returns the result of merging the two vectors.]
+  Synopsis    [Keeps only those entries in vArr1, which are in vArr2.]
 
-  Description [Keeps only those entries of vArr1, which are in vArr2.]
+  Description [Assumes that the vectors are sorted in the increasing order.]
                
   SideEffects []
 
   SeeAlso     []
 
 ***********************************************************************/
-static inline void Vec_IntTwoMerge1( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
+static inline void Vec_IntTwoFilter( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
 {
     int * pBeg  = vArr1->pArray;
     int * pBeg1 = vArr1->pArray;

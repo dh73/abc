@@ -3323,47 +3323,47 @@ SOURCE=.\src\opt\fxu\fxuUpdate.c
 # PROP Default_Filter ""
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_map.h
+SOURCE=.\src\opt\rar\rewireMap.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_miaig.h
+SOURCE=.\src\opt\rar\rewireMiaig.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_rar.h
+SOURCE=.\src\opt\rar\rewireRar.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_rng.h
+SOURCE=.\src\opt\rar\rewireRng.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_time.h
+SOURCE=.\src\opt\rar\rewireTime.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_tt.h
+SOURCE=.\src\opt\rar\rewireTt.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_vec.h
+SOURCE=.\src\opt\rar\rewireVec.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_map.c
+SOURCE=.\src\opt\rar\rewireMap.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_miaig.cpp
+SOURCE=.\src\opt\rar\rewireMiaig.cpp
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_rar.c
+SOURCE=.\src\opt\rar\rewireRar.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\src\opt\rar\rewire_rng.c
+SOURCE=.\src\opt\rar\rewireRng.c
 # End Source File
 # End Group
 # Begin Group "rwr"
@@ -4991,6 +4991,10 @@ SOURCE=.\src\misc\util\utilPth.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\src\misc\util\utilPrefix.cpp
+# End Source File
+# Begin Source File
+
 SOURCE=.\src\misc\util\utilSignal.c
 # End Source File
 # Begin Source File
@@ -5752,6 +5756,10 @@ SOURCE=.\src\aig\gia\giaBidec.c
 # Begin Source File
 
 SOURCE=.\src\aig\gia\giaBound.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\src\aig\gia\giaBsFind.c
 # End Source File
 # Begin Source File
 

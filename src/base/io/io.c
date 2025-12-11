@@ -58,6 +58,7 @@ static int IoCommandReadVerilog ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandReadStatus  ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandReadGig     ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandReadJson    ( Abc_Frame_t * pAbc, int argc, char **argv );
+static int IoCommandReadJsonc   ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandReadSF      ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandReadRom     ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandReadMM      ( Abc_Frame_t * pAbc, int argc, char **argv );
@@ -71,6 +72,7 @@ static int IoCommandWriteBaf    ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandWriteBblif  ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandWriteBlif   ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandWriteEdgelist( Abc_Frame_t * pAbc, int argc, char **argv );
+static int IoCommandWriteNtk    ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandWriteBlifMv ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandWriteBench  ( Abc_Frame_t * pAbc, int argc, char **argv );
 static int IoCommandWriteBook   ( Abc_Frame_t * pAbc, int argc, char **argv );
@@ -124,7 +126,6 @@ void Io_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "I/O", "read_blif_mv",  IoCommandReadBlifMv,   1 );
     Cmd_CommandAdd( pAbc, "I/O", "read_bench",    IoCommandReadBench,    1 );
     Cmd_CommandAdd( pAbc, "I/O", "read_cex",      IoCommandReadCex,      1 );
-    Cmd_CommandAdd( pAbc, "I/O", "read_dsd",      IoCommandReadDsd,      1 );
     Cmd_CommandAdd( pAbc, "I/O", "read_formula",  IoCommandReadDsd,      1 );
 //    Cmd_CommandAdd( pAbc, "I/O", "read_edif",     IoCommandReadEdif,     1 );
     Cmd_CommandAdd( pAbc, "I/O", "read_eqn",      IoCommandReadEqn,      1 );
@@ -138,6 +139,7 @@ void Io_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "I/O", "read_status",   IoCommandReadStatus,   0 );
     Cmd_CommandAdd( pAbc, "I/O", "&read_gig",     IoCommandReadGig,      0 );
     Cmd_CommandAdd( pAbc, "I/O", "read_json",     IoCommandReadJson,     0 );
+    Cmd_CommandAdd( pAbc, "I/O", "read_jsonc",    IoCommandReadJsonc,    0 );
     Cmd_CommandAdd( pAbc, "I/O", "read_sf",       IoCommandReadSF,       0 );
     Cmd_CommandAdd( pAbc, "I/O", "read_rom",      IoCommandReadRom,      1 );
     Cmd_CommandAdd( pAbc, "I/O", "read_mm",       IoCommandReadMM,       1 );
@@ -160,6 +162,7 @@ void Io_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "I/O", "write_dot",     IoCommandWriteDot,     0 );
     Cmd_CommandAdd( pAbc, "I/O", "write_eqn",     IoCommandWriteEqn,     0 );
     Cmd_CommandAdd( pAbc, "I/O", "write_edgelist",IoCommandWriteEdgelist,    0 );
+    Cmd_CommandAdd( pAbc, "I/O", "write_ntk",     IoCommandWriteNtk,     0 );
     Cmd_CommandAdd( pAbc, "I/O", "write_gml",     IoCommandWriteGml,     0 );
 //    Cmd_CommandAdd( pAbc, "I/O", "write_list",    IoCommandWriteList,    0 );
     Cmd_CommandAdd( pAbc, "I/O", "write_hmetis",  IoCommandWriteHMetis,     0 );
@@ -1074,10 +1077,10 @@ int IoCommandReadDsd( Abc_Frame_t * pAbc, int argc, char ** argv )
     return 0;
 
 usage:
-    fprintf( pAbc->Err, "usage: read_dsd [-h] <formula>\n" );
-    fprintf( pAbc->Err, "\t          parses a formula representing DSD of a function\n" );
+    fprintf( pAbc->Err, "usage: read_formula [-h] <formula>\n" );
+    fprintf( pAbc->Err, "\t          reads a Boolean function represented by a formula\n" );
     fprintf( pAbc->Err, "\t-h      : prints the command summary\n" );
-    fprintf( pAbc->Err, "\tformula : the formula representing disjoint-support decomposition (DSD)\n" );
+    fprintf( pAbc->Err, "\tformula : the formula representing the function\n" );
     fprintf( pAbc->Err, "\t          Example of a formula: !(a*(b+CA(!d,e*f,c))*79B3(g,h,i,k))\n" );
     fprintf( pAbc->Err, "\t          where \'!\' is an INV, \'*\' is an AND, \'+\' is an XOR, \n" );
     fprintf( pAbc->Err, "\t          CA and 79B3 are hexadecimal representations of truth tables\n" );
@@ -1866,6 +1869,60 @@ int IoCommandReadJson( Abc_Frame_t * pAbc, int argc, char ** argv )
 
 usage:
     fprintf( pAbc->Err, "usage: read_json [-h] <file>\n" );
+    fprintf( pAbc->Err, "\t         reads file in JSON format\n" );
+    fprintf( pAbc->Err, "\t-h     : prints the command summary\n" );
+    fprintf( pAbc->Err, "\tfile   : the name of a file to read\n" );
+    return 1;
+}
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+int IoCommandReadJsonc( Abc_Frame_t * pAbc, int argc, char ** argv )
+{
+    extern int Jsonc_ReadTest( char * pFileName );
+    char * pFileName;
+    FILE * pFile;
+    int c;
+
+    Extra_UtilGetoptReset();
+    while ( ( c = Extra_UtilGetopt( argc, argv, "h" ) ) != EOF )
+    {
+        switch ( c )
+        {
+            case 'h':
+                goto usage;
+            default:
+                goto usage;
+        }
+    }
+    if ( argc != globalUtilOptind + 1 )
+    {
+        goto usage;
+    }
+
+    // get the input file name
+    pFileName = argv[globalUtilOptind];
+    if ( (pFile = fopen( pFileName, "r" )) == NULL )
+    {
+        fprintf( pAbc->Err, "Cannot open input file \"%s\". \n", pFileName );
+        return 1;
+    }
+    fclose( pFile );
+
+    Jsonc_ReadTest( pFileName );
+    return 0;
+
+usage:
+    fprintf( pAbc->Err, "usage: read_jsonc [-h] <file>\n" );
     fprintf( pAbc->Err, "\t         reads file in JSON format\n" );
     fprintf( pAbc->Err, "\t-h     : prints the command summary\n" );
     fprintf( pAbc->Err, "\tfile   : the name of a file to read\n" );
@@ -3498,6 +3555,77 @@ usage:
     fprintf( pAbc->Err, "\t-N     : toggle keeping original naming of the netlist in edgelist (default=False)\n");  
     fprintf( pAbc->Err, "\t-h     : print the help massage\n" );
     fprintf( pAbc->Err, "\tfile   : the name of the file to write (extension .el)\n" );
+    return 1;
+}
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+int IoCommandWriteNtk( Abc_Frame_t * pAbc, int argc, char **argv )
+{
+    char * pFileName;
+    int c;
+
+    Extra_UtilGetoptReset();
+    while ( ( c = Extra_UtilGetopt( argc, argv, "Nh" ) ) != EOF )
+    {
+        switch ( c )
+        {
+            case 'h':
+                goto usage;
+            default:
+                goto usage;
+        }
+    }
+    if ( pAbc->pNtkCur == NULL )
+    {
+        fprintf( pAbc->Out, "Empty network.\n" );
+        return 0;
+    }
+    if ( argc != globalUtilOptind + 1 )
+        goto usage;
+    else 
+    {
+        Abc_Obj_t * pObj, * pFanin; int i, k, nIds = 1;
+        int * pId = ABC_CALLOC( int, Abc_NtkObjNumMax(pAbc->pNtkCur) );
+        Abc_NtkForEachCi( pAbc->pNtkCur, pObj, i )
+            pId[pObj->Id] = nIds++;
+        Abc_NtkForEachNode( pAbc->pNtkCur, pObj, i )
+            pId[pObj->Id] = nIds++;
+        Abc_NtkForEachCo( pAbc->pNtkCur, pObj, i )
+            pId[pObj->Id] = nIds++;
+        // get the output file name
+        pFileName = argv[globalUtilOptind];
+        FILE * pFile = fopen( pFileName, "wb" );
+        fprintf( pFile, "%d\n", 0 );
+        Abc_NtkForEachCi( pAbc->pNtkCur, pObj, i )
+            fprintf( pFile, "%d\n", pId[pObj->Id] );
+        Abc_NtkForEachNode( pAbc->pNtkCur, pObj, i ) {
+            fprintf( pFile, "%d", pId[pObj->Id] );
+            Abc_ObjForEachFanin( pObj, pFanin, k )
+                fprintf( pFile, " %d", pId[pFanin->Id] );
+            fprintf( pFile, "\n" );
+        }
+        Abc_NtkForEachCo( pAbc->pNtkCur, pObj, i )
+            fprintf( pFile, "%d %d\n", pId[pObj->Id], pId[Abc_ObjFanin0(pObj)->Id] );
+        fclose( pFile );
+        ABC_FREE( pId );
+    }
+    return 0;
+
+usage:
+    fprintf( pAbc->Err, "usage: write_ntk <file>\n" );
+    fprintf( pAbc->Err, "\t         writes the network into a text file\n" );
+    fprintf( pAbc->Err, "\t-h     : print the help massage\n" );
+    fprintf( pAbc->Err, "\tfile   : the name of the file to write\n" );
     return 1;
 }
 

@@ -742,9 +742,9 @@ typedef struct Abc_BSEval_t_  Abc_BSEval_t;
 extern Abc_BSEval_t * Abc_BSEvalAlloc();
 extern void Abc_BSEvalFree( Abc_BSEval_t * p );
 
-word * Abc_LutCascadeDec( Abc_BSEval_t * p, char * pGuide, word * pTruth, int nVarsOrig, Vec_Int_t * vVarIDs, int nRails, int nLutSize, int nStages, int fUseRand, int nZParam, int fXRail, int fVerbose, int * pnStages, int * pMyu )
+word * Abc_LutCascadeDec( Abc_BSEval_t * p, char * pGuide, word * pTruth, int nVarsOrig, Vec_Int_t * vVarIDs, int nRails, int nLutSize, int nStages, int fUseRand, int nZParam, int fXRail, int fVerbose, int * pnStages, int * pMyu, int nSubsets, int nBest )
 {
-    extern Vec_Wrd_t * Abc_TtFindBVarsSVars2( Abc_BSEval_t * p, word * pTruth, int nVars, int nCVars, int nRails, int nLutSize, int fVerbose, int * pMyu, int nMyuIncrease );
+    extern Vec_Wrd_t * Abc_TtFindBVarsSVars2( Abc_BSEval_t * p, word * pTruth, int nVars, int nCVars, int nRails, int nLutSize, int fVerbose, int * pMyu, int nMyuIncrease, int nSubsets, int nBest );
     word * pRes = NULL; int i, nRVars = 0, nVars = Vec_IntSize(vVarIDs);
     Vec_Wrd_t * vFuncs[3] = { Vec_WrdStart(Abc_TtWordNum(nVars)), Vec_WrdAlloc(0), Vec_WrdAlloc(0) };
     Abc_TtCopy( Vec_WrdArray(vFuncs[0]), pTruth, Abc_TtWordNum(nVars), 0 );
@@ -752,7 +752,7 @@ word * Abc_LutCascadeDec( Abc_BSEval_t * p, char * pGuide, word * pTruth, int nV
     if ( pnStages ) *pnStages = 0;
     for ( i = 0; Vec_IntSize(vVarIDs) > nLutSize; i++ ) {
         int nRVarsOld = nRVars;
-        Vec_Wrd_t * vGuides = Abc_TtFindBVarsSVars2( p, Vec_WrdArray(vFuncs[0]), Vec_IntSize(vVarIDs), nRVars, nRails, nLutSize, fVerbose, pMyu, nZParam );
+        Vec_Wrd_t * vGuides = Abc_TtFindBVarsSVars2( p, Vec_WrdArray(vFuncs[0]), Vec_IntSize(vVarIDs), nRVars, nRails, nLutSize, fVerbose, pMyu, nZParam, nSubsets, nBest );
         if ( vGuides ) {
             int iEntry = fUseRand ? Abc_Random(0) % Vec_WrdSize(vGuides) : 0;
             nRVars = Abc_LutCascadeDecStage( Vec_WrdEntry(vGuides, iEntry), pGuide, i, vFuncs, vVarIDs, nRVarsOld, nRails, nLutSize, nZParam, fVerbose, vCas, i ? NULL : pMyu );
@@ -766,7 +766,7 @@ word * Abc_LutCascadeDec( Abc_BSEval_t * p, char * pGuide, word * pTruth, int nV
             nRVars = -1;
         }
         if ( fXRail && nRVars == -1 && Vec_IntSize(vVarIDs) > nLutSize-1 ) {
-            Vec_Wrd_t * vGuides = Abc_TtFindBVarsSVars2( p, Vec_WrdArray(vFuncs[0]), Vec_IntSize(vVarIDs), nRVarsOld, nRails+1, nLutSize-1, fVerbose, pMyu, nZParam );
+            Vec_Wrd_t * vGuides = Abc_TtFindBVarsSVars2( p, Vec_WrdArray(vFuncs[0]), Vec_IntSize(vVarIDs), nRVarsOld, nRails+1, nLutSize-1, fVerbose, pMyu, nZParam, nSubsets, nBest );
             if ( vGuides ) {
                 int iEntry = fUseRand ? Abc_Random(0) % Vec_WrdSize(vGuides) : 0;
                 nRVars = Abc_LutCascadeDecStage( Vec_WrdEntry(vGuides, iEntry), pGuide, i, vFuncs, vVarIDs, nRVarsOld, nRails+1, nLutSize-1, nZParam, fVerbose, vCas, NULL );
@@ -890,7 +890,7 @@ Abc_Ntk_t * Abc_NtkLutCascade( Abc_Ntk_t * pNtk, int nLutSize, int nStages, int 
     Gia_ManStop( pGia );
     return pNew;
 }
-Abc_Ntk_t * Abc_NtkLutCascadeOne( Abc_Ntk_t * pNtk, int nLutSize, int nStages, int nRails, int nIters, int nJRatio, int nZParam, int fXRail, int Seed, int fVerbose, int fVeryVerbose, char * pGuide )
+Abc_Ntk_t * Abc_NtkLutCascadeOne( Abc_Ntk_t * pNtk, int nLutSize, int nStages, int nRails, int nIters, int nJRatio, int nZParam, int fXRail, int Seed, int fVerbose, int fVeryVerbose, char * pGuide, int nSubsets, int nBest )
 {
     extern Gia_Man_t *  Abc_NtkStrashToGia( Abc_Ntk_t * pNtk );
     int i, nWords     = Abc_TtWordNum(Abc_NtkCiNum(pNtk));
@@ -919,7 +919,7 @@ Abc_Ntk_t * Abc_NtkLutCascadeOne( Abc_Ntk_t * pNtk, int nLutSize, int nStages, i
             printf( ".\n" );
         }
 
-        word * pLuts = Abc_LutCascadeDec( p, pGuide, pTruth1, Abc_NtkCiNum(pNtk), vVarIDs, nRails, nLutSize, nStages, (int)(Iter >= 0), nZParam, fXRail, fVeryVerbose, NULL, NULL );
+        word * pLuts = Abc_LutCascadeDec( p, pGuide, pTruth1, Abc_NtkCiNum(pNtk), vVarIDs, nRails, nLutSize, nStages, (int)(Iter >= 0), nZParam, fXRail, fVeryVerbose, NULL, NULL, nSubsets, nBest );
         pNew = pLuts ? Abc_NtkLutCascadeFromLuts( pLuts, Abc_NtkCiNum(pNtk), pNtk, nLutSize, fVerbose ) : NULL;
         Vec_IntFree( vVarIDs );
         
@@ -962,7 +962,23 @@ Abc_Ntk_t * Abc_NtkLutCascadeGen( int nLutSize, int nStages, int nRails, int nSh
     ABC_FREE( pLuts );
     return pNew;
 }
-
+char * Abc_NtkReadTruth( Abc_Ntk_t * pNtk )
+{
+    if ( Abc_NtkCiNum(pNtk) > 30 )
+        return NULL;
+    extern Gia_Man_t *  Abc_NtkStrashToGia( Abc_Ntk_t * pNtk );
+    Gia_Man_t * pGia  = Abc_NtkStrashToGia( pNtk );
+    word * pTruth1    = Gia_ObjComputeTruthTable( pGia, Gia_ManCo(pGia, 0) );
+    int nWords        = Abc_TtWordNum(Abc_NtkCiNum(pNtk));
+    word * pCopy      = ABC_ALLOC( word, nWords );
+    Abc_TtCopy( pCopy, pTruth1, nWords, 0 );
+    Gia_ManStop( pGia );
+    int nVars = Abc_NtkCiNum(pNtk);
+    char * pTtStr = ABC_CALLOC( char, nVars > 2 ? (1 << (nVars-2)) + 1 : 2 );
+    Extra_PrintHexadecimalString( pTtStr, (unsigned *)pCopy, nVars );
+    ABC_FREE( pCopy );
+    return pTtStr;
+}
 
 /**Function*************************************************************
 
@@ -1434,11 +1450,13 @@ Vec_Wrd_t * Abc_NtkLutCasReadTruths( char * pFileName, int nVarsOrig )
   SeeAlso     []
 
 ***********************************************************************/
-void Abc_NtkLutCascadeFile( char * pFileName, int nVarsOrig, int nLutSize, int nStages, int nRails, int nIters, int nJRatio, int nZParam, int Seed, int fVerbose, int fVeryVerbose, int fPrintMyu, int fPrintLev, int fXRail )
+void Abc_NtkLutCascadeFile( char * pFileName, int nVarsOrig, int nLutSize, int nStages, int nRails, int nIters, int nJRatio, int nZParam, int Seed, int fVerbose, int fVeryVerbose, int fPrintMyu, int fPrintLev, int fXRail, int nSubsets, int nBest, int fDump )
 {
     abctime clkStart = Abc_Clock();   
     int i, nErrors = 0, Sum = 0, nStageCount = 0, MyuMin = 0, nTotalLuts = 0, nWords = Abc_TtWordNum(nVarsOrig);
     Vec_Wrd_t * vTruths = NULL;
+    char pFileNameOut[1000] = {0};
+    FILE * pFile = NULL;
     if ( strstr(pFileName, ".txt") )
         vTruths = Abc_NtkLutCasReadTruths( pFileName, nVarsOrig );
     else
@@ -1483,9 +1501,9 @@ void Abc_NtkLutCascadeFile( char * pFileName, int nVarsOrig, int nLutSize, int n
             printf( "Decomposing %d-var function into %d-rail cascade of %d-LUTs.\n", nVars, nRails, nLutSize );
         }
         
-        word * pLuts = Abc_LutCascadeDec( p, NULL, pTruth, nVarsOrig, vVarIDs, nRails, nLutSize, nStages, (int)(Iter >= 0), nZParam, fXRail, fVeryVerbose, &nStageCount, &MyuMin );
+        word * pLuts = Abc_LutCascadeDec( p, NULL, pTruth, nVarsOrig, vVarIDs, nRails, nLutSize, nStages, (int)(Iter >= 0), nZParam, fXRail, fVeryVerbose, &nStageCount, &MyuMin, nSubsets, nBest );
         Vec_IntFree( vVarIDs );
-        if ( MyuMin < 50 )     MyuStats[MyuMin]++, IterReal++;
+        if ( MyuMin < 50 && Iter == 0 )     MyuStats[MyuMin]++, IterReal++;
         if ( pLuts == NULL ) {
             if ( ++Iter < nIters ) {
                 i--;
@@ -1494,6 +1512,16 @@ void Abc_NtkLutCascadeFile( char * pFileName, int nVarsOrig, int nLutSize, int n
             Iter = 0;
             if ( fVerbose || fVeryVerbose )
                 printf( "Not decomposable.\n" );
+            if ( fDump ) {
+                if ( pFile == NULL ) {
+                    sprintf( pFileNameOut, "%s_nd", pFileName );
+                    pFile = fopen( pFileNameOut, "wb" );
+                }
+                char * pTtStr = ABC_CALLOC( char, (1 << (nVarsOrig-2)) + 1 );
+                Extra_PrintHexadecimalString( pTtStr, (unsigned *)pTruth, nVarsOrig );
+                fprintf( pFile, "%s\n", pTtStr );
+                ABC_FREE( pTtStr );
+            }
             continue;
         }
         Iter = 0;
@@ -1543,6 +1571,10 @@ void Abc_NtkLutCascadeFile( char * pFileName, int nVarsOrig, int nLutSize, int n
     printf( "Finished %d functions (%.2f LUTs / function; %.2f functions / sec).  ", 
         nFuncs, 1.0*nTotalLuts/Sum, 1.0*nFuncs/(((double)(Abc_Clock() - clkStart))/((double)CLOCKS_PER_SEC)) );
     Abc_PrintTime( 0, "Total time", Abc_Clock() - clkStart );
+    if ( pFile ) {
+        printf( "Finished dumping %d non-decomposable functions into file \"%s\".\n", nFuncs-Sum, pFileNameOut );
+        fclose( pFile );
+    }
 }
 
 /**Function*************************************************************
@@ -1671,10 +1703,269 @@ void Abc_NtkRandFile( char * pFileName, int nVars, int nFuncs, int nMints )
     Vec_WrdFree( vTruths );
 }
 
+/**Function*************************************************************
+
+  Synopsis    [Dump popcount LUT cascades into a Verilog file.]
+
+  Description [Emits one LUT6CY per LUT with placement attributes and 
+               preserves cascade ordering via RLOC/BEL tags.]
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+static void Abc_LutCascadeDumpName( FILE * pFile, int Obj, int iCas, int nVars )
+{
+    if ( Obj < nVars )
+        fprintf( pFile, "pi%d", Obj );
+    else
+        fprintf( pFile, "w%d_%d", iCas, Obj );
+}
+static void Abc_LutCascadeDumpOneVerilog( FILE * pFile, word * pLuts, int nVars, int iCas )
+{
+    static const char * pBels[6] = { "A5LUT", "B5LUT", "C5LUT", "D5LUT", "E5LUT", "F5LUT" };
+    Vec_Int_t * vWires = Vec_IntAlloc( 32 );
+    word n, i;
+    for ( n = 0, i = 1; n < pLuts[0]; n++, i += pLuts[i] )
+    {
+        word nIns   = pLuts[i+1];
+        word * pIns = pLuts+i+2;
+        int OutId   = (int)pIns[nIns];
+        if ( OutId >= nVars )
+            Vec_IntPushUnique( vWires, OutId );
+    }
+    if ( Vec_IntSize(vWires) )
+    {
+        fprintf( pFile, "  // cascade %d wires\n", iCas );
+        int Id; int k;
+        Vec_IntForEachEntry( vWires, Id, k )
+            fprintf( pFile, "  wire w%d_%d;\n", iCas, Id );
+        fprintf( pFile, "\n" );
+    }
+    Vec_IntClear( vWires );
+
+    int iLastLut = -1;
+    for ( n = 0, i = 1; n < pLuts[0]; n++, i += pLuts[i] )
+    {
+        word nIns   = pLuts[i+1];
+        word * pIns = pLuts+i+2;
+        word * pT   = pLuts+i+2+nIns+1;
+        iLastLut    = (int)pIns[nIns];
+        fprintf( pFile, "  (* HU_SET = \"hu_set_%d\", RLOC = \"X%dY%u\", BEL = \"%s\", DONT_TOUCH = \"yes\", IS_BEL_FIXED = \"yes\" *)\n",
+            iCas, iCas, (unsigned)n, pBels[n % 6] );
+        fprintf( pFile, "  LUT6CY #(.INIT(64'h" );
+        Abc_TtPrintHexRev( pFile, pT, 6 );
+        fprintf( pFile, ")) lut_%d_%u (\n", iCas, (unsigned)n );
+        int k;
+        for ( k = 0; k < 6; k++ )
+        {
+            fprintf( pFile, "    .I%d(", k );
+            if ( k < (int)nIns )
+                Abc_LutCascadeDumpName( pFile, (int)pIns[k], iCas, nVars );
+            else
+                fprintf( pFile, "1'b0" );
+            fprintf( pFile, "),\n" );
+        }
+        fprintf( pFile, "    .O(" );
+        Abc_LutCascadeDumpName( pFile, iLastLut, iCas, nVars );
+        fprintf( pFile, ")\n  );\n\n" );
+    }
+    assert( iLastLut >= 0 );
+    fprintf( pFile, "  assign pc%d = ", iCas );
+    Abc_LutCascadeDumpName( pFile, iLastLut, iCas, nVars );
+    fprintf( pFile, ";\n\n" );
+    Vec_IntFree( vWires );
+}
+void Abc_LutCascadeDumpVerilog( Vec_Ptr_t * vLuts, int nVars, const char * pFileName )
+{
+    if ( vLuts == NULL || pFileName == NULL )
+    {
+        printf( "Abc_LutCascadeDumpVerilog(): Null input.\n" );
+        return;
+    }
+    FILE * pFile = fopen( pFileName, "wb" );
+    if ( pFile == NULL )
+    {
+        printf( "Abc_LutCascadeDumpVerilog(): Cannot open \"%s\" for writing.\n", pFileName );
+        return;
+    }
+    int nOuts = Vec_PtrSize( vLuts );
+    fprintf( pFile, "// Auto-generated LUT cascade\n" );
+    fprintf( pFile, "module lut_cascade_%d (\n", nVars );
+    int i;
+    fprintf( pFile, "  input " );
+    for ( i = 0; i < nVars; i++ )
+    {
+        if ( i ) fprintf( pFile, ", " );
+        fprintf( pFile, "pi%d", i );
+    }
+    fprintf( pFile, ",\n  output " );
+    for ( i = 0; i < nOuts; i++ )
+    {
+        if ( i ) fprintf( pFile, ", " );
+        fprintf( pFile, "pc%d", i );
+    }
+    fprintf( pFile, "\n);\n\n" );
+
+    word * pLuts;
+    Vec_PtrForEachEntry( word *, vLuts, pLuts, i )
+    {
+        if ( pLuts == NULL )
+            continue;
+        fprintf( pFile, "  // cascade %d\n", i );
+        Abc_LutCascadeDumpOneVerilog( pFile, pLuts, nVars, i );
+    }
+    fprintf( pFile, "endmodule\n" );
+    fclose( pFile );
+}
+
+/**Function*************************************************************
+
+  Synopsis    [Generates popcount as a set of LUT cascades.]
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+Vec_Ptr_t * Exa8_ManExactSynthesisPopcountAsLuts( int nVars, int nLutSize, int fVerbose )
+{
+    extern Vec_Ptr_t * Exa8_ManExactSynthesisPopcount( int nVars, int nLutSize, int fVerbose );
+    Vec_Ptr_t * vTruthSets = Exa8_ManExactSynthesisPopcount( nVars, nLutSize, fVerbose );
+    if ( vTruthSets == NULL )
+        return NULL;
+    int nWordsNode = Abc_TtWordNum( nLutSize );
+    int nOuts = Abc_Base2Log( nVars + 1 );
+    if ( Vec_PtrSize(vTruthSets) != nOuts && fVerbose )
+        printf( "Exa8_ManExactSynthesisPopcountAsLuts(): Expecting %d outputs, got %d.\n", nOuts, Vec_PtrSize(vTruthSets) );
+    Vec_Ptr_t * vRes = Vec_PtrAlloc( Vec_PtrSize(vTruthSets) );
+    Vec_Wrd_t * vTruths; int o;
+    Vec_PtrForEachEntry( Vec_Wrd_t *, vTruthSets, vTruths, o )
+    {
+        if ( vTruths == NULL )
+            continue;
+        int nObjs  = Vec_WrdSize( vTruths ) / nWordsNode;
+        int nNodes = nObjs - nVars;
+        if ( nNodes <= 0 )
+        {
+            Vec_WrdFree( vTruths );
+            continue;
+        }
+        Vec_Wrd_t * vLutVec = Vec_WrdStart( 1 );
+        int pIns[6]; int i, k;
+        for ( i = 0; i < nNodes; i++ )
+        {
+            word * pTruth = Vec_WrdEntryP( vTruths, (nVars + i) * nWordsNode );
+            if ( i == 0 )
+            {
+                for ( k = 0; k < nLutSize; k++ )
+                    pIns[k] = nLutSize-1-k;
+            }
+            else
+            {
+                pIns[0] = nVars + i - 1;
+                if ( i & 1 )
+                    for ( k = 0; k < nLutSize-1; k++ )
+                        pIns[k+1] = nVars - 1 - k;
+                else
+                    for ( k = 0; k < nLutSize-1; k++ )
+                        pIns[k+1] = nLutSize - 2 - k;
+            }
+            Abc_LutCascadeGenOne( vLutVec, nLutSize, pIns, nVars + i, pTruth );
+        }
+        if ( fVerbose )
+            Abc_LutCascadePrint( Vec_WrdArray(vLutVec), nLutSize );
+        Vec_PtrPush( vRes, Vec_WrdReleaseArray(vLutVec) );
+        Vec_WrdFree( vLutVec );
+        Vec_WrdFree( vTruths );
+    }
+    Vec_PtrFree( vTruthSets );
+    return vRes;
+}
+
+/**Function*************************************************************
+
+  Synopsis    [Builds network for popcount cascades.]
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+Abc_Ntk_t * Abc_NtkLutCascadeFromPopcountLuts( int nVars, int nLutSize, int fVerbose, char * pFileName )
+{
+    Vec_Ptr_t * vLuts = Exa8_ManExactSynthesisPopcountAsLuts( nVars, nLutSize, fVerbose );
+    if ( vLuts == NULL )
+        return NULL;
+    if ( pFileName && nLutSize == 6 ) {
+        Abc_LutCascadeDumpVerilog( vLuts, nVars, pFileName );
+        printf( "Wrote the resulting network into a Verilog file \"%s\".\n", pFileName );
+    }
+    Abc_Ntk_t * pNtkNew = Abc_NtkAlloc( ABC_NTK_LOGIC, ABC_FUNC_SOP, 0 );
+    Abc_Obj_t * pObj; int Id; char pName[32];
+    pNtkNew->pName = Extra_UtilStrsav( "pop" );
+    Vec_PtrPush( pNtkNew->vObjs, NULL );
+    for ( Id = 0; Id < nVars; Id++ )
+    {
+        pObj = Abc_NtkCreatePi( pNtkNew );
+        pName[0] = 'a' + Id;
+        pName[1] = 0;
+        Abc_ObjAssignName( pObj, pName, NULL );
+    }
+    Vec_Int_t * vCover = Vec_IntAlloc( 1000 );
+    if ( Vec_PtrSize(vLuts) != Abc_Base2Log(nVars + 1) )
+        printf( "Abc_NtkLutCascadeFromPopcountLuts(): Expecting %d outputs, got %d.\n", Abc_Base2Log(nVars + 1), Vec_PtrSize(vLuts) );
+    word * pLuts; int o;
+    Vec_PtrForEachEntry( word *, vLuts, pLuts, o )
+    {
+        if ( pLuts == NULL )
+            continue;
+        Vec_Ptr_t * vCopy = Vec_PtrStart( nVars + pLuts[0] + 100 );
+        Abc_NtkForEachCi( pNtkNew, pObj, Id )
+            Vec_PtrWriteEntry( vCopy, Id, pObj );
+        word n, i, k; int iLastLut = -1;
+        for ( n = 0, i = 1; n < pLuts[0]; n++, i += pLuts[i] ) 
+        {
+            word nIns   = pLuts[i+1];
+            word * pIns = pLuts+i+2;
+            word * pT   = pLuts+i+2+nIns+1;
+            Abc_Obj_t * pNodeNew = Abc_NtkCreateNode( pNtkNew );
+            for ( k = 0; k < nIns; k++ )
+                Abc_ObjAddFanin( pNodeNew, (Abc_Obj_t *)Vec_PtrEntry(vCopy, pIns[k]) );
+            Abc_Obj_t * pObjNew = Abc_NtkLutCascadeDeriveSop( pNtkNew, pNodeNew, pT, nIns, vCover );
+            Vec_PtrWriteEntry( vCopy, pIns[nIns], pObjNew );        
+            iLastLut = pIns[nIns];
+        }
+        if ( iLastLut == -1 )
+        {
+            Vec_PtrFree( vCopy );
+            continue;
+        }
+        Abc_Obj_t * pPo = Abc_NtkCreatePo( pNtkNew );
+        Abc_ObjAddFanin( pPo, (Abc_Obj_t *)Vec_PtrEntry(vCopy, iLastLut) );
+        snprintf( pName, sizeof(pName), "pc%d", o );
+        Abc_ObjAssignName( pPo, pName, NULL );
+        Vec_PtrFree( vCopy );
+    }
+    Vec_IntFree( vCover );
+    Vec_PtrFreeFree( vLuts );
+    if ( !Abc_NtkCheck( pNtkNew ) )
+    {
+        printf( "Abc_NtkLutCascadeFromPopcountLuts: The network check has failed.\n" );
+        Abc_NtkDelete( pNtkNew );
+        return NULL;
+    }
+    return pNtkNew;
+}
+
 ////////////////////////////////////////////////////////////////////////
 ///                       END OF FILE                                ///
 ////////////////////////////////////////////////////////////////////////
 
 
 ABC_NAMESPACE_IMPL_END
-
