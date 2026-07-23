@@ -21,6 +21,7 @@
 #include "sclSize.h"
 #include "map/mio/mio.h"
 #include "base/main/main.h"
+#include "aig/aig/aig.h"
 
 ABC_NAMESPACE_IMPL_START
 
@@ -75,9 +76,11 @@ void Abc_SclSclGates2MioGates( SC_Lib * pLib, Abc_Ntk_t * p )
     assert( p->vGates != NULL );
     Abc_NtkForEachNodeNotBarBuf1( p, pObj, i )
     {
+        Mio_Gate_t * pGateOld = (Mio_Gate_t *)pObj->pData;
+        char * pOutName = Abc_SclObjIsMogOutput(pObj) ? Mio_GateReadOutName(pGateOld) : NULL;
         pCell = Abc_SclObjCell(pObj);
         assert( pCell->n_inputs == Abc_ObjFaninNum(pObj) );
-        pObj->pData = Mio_LibraryReadGateByName( (Mio_Library_t *)p->pManFunc, pCell->pName, NULL );
+        pObj->pData = Mio_LibraryReadGateByName( (Mio_Library_t *)p->pManFunc, pCell->pName, pOutName );
         Counter += (pObj->pData == NULL);
         assert( pObj->fMarkA == 0 && pObj->fMarkB == 0 );
         CounterAll++;
@@ -275,6 +278,81 @@ void Abc_SclReadTimingConstr( Abc_Frame_t * pAbc, char * pFileName, int fVerbose
 
 /**Function*************************************************************
 
+  Synopsis    [Computes switching activity for each object.]
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+Vec_Flt_t * Abc_SclComputeSwitching( Abc_Ntk_t * pNtk, int nFrames, int nPref )
+{
+    extern Aig_Man_t * Abc_NtkToDar( Abc_Ntk_t * pNtk, int fExors, int fRegisters );
+    extern Vec_Int_t * Saig_ManComputeSwitchProbs( Aig_Man_t * p, int nFrames, int nPref, int fProbOne );
+    Vec_Int_t * vSwitching = NULL;
+    Vec_Flt_t * vResult;
+    float * pSwitching, * pResult;
+    Abc_Ntk_t * pNtkDup = NULL, * pNtkStr = NULL;
+    Aig_Man_t * pAig = NULL;
+    Aig_Obj_t * pObjAig;
+    Abc_Obj_t * pObj, * pObjDup, * pObjStr;
+    int i;
+    vResult = Vec_FltStart( Abc_NtkObjNumMax(pNtk) );
+    pResult = Vec_FltArray(vResult);
+    pNtkDup = Abc_NtkDup( pNtk );
+    if ( pNtkDup == NULL )
+        goto cleanup;
+    // strash the duplicated network
+    pNtkStr = Abc_NtkStrash( pNtkDup, 0, 1, 0 );
+    if ( pNtkStr == NULL )
+        goto cleanup;
+    Abc_NtkForEachObj( pNtkDup, pObj, i )
+        if ( (pObj->pTemp && Abc_ObjRegular((Abc_Obj_t *)pObj->pTemp)->Type == ABC_FUNC_NONE) || (!Abc_ObjIsCi(pObj) && !Abc_ObjIsNode(pObj)) )
+            pObj->pTemp = NULL;
+    // map network into an AIG
+    pAig = Abc_NtkToDar( pNtkStr, 0, (int)(Abc_NtkLatchNum(pNtkDup) > 0) );
+    if ( pAig == NULL )
+        goto cleanup;
+    vSwitching = Saig_ManComputeSwitchProbs( pAig, nFrames, nPref, 0 );
+    if ( vSwitching == NULL )
+        goto cleanup;
+    pSwitching = (float *)Vec_IntArray(vSwitching);
+    Abc_NtkForEachObj( pNtk, pObj, i )
+    {
+        pObjDup = (Abc_Obj_t *)pObj->pCopy;
+        if ( pObjDup == NULL )
+            continue;
+        if ( pObjDup->pTemp == NULL )
+            continue;
+        pObjStr = Abc_ObjRegular((Abc_Obj_t *)pObjDup->pTemp);
+        if ( pObjStr == NULL )
+            continue;
+        if ( pObjStr->pTemp == NULL )
+            continue;
+        pObjAig = Aig_Regular((Aig_Obj_t *)pObjStr->pTemp);
+        if ( pObjAig == NULL )
+            continue;
+        pResult[pObj->Id] = pSwitching[pObjAig->Id];
+    }
+cleanup:
+    Abc_NtkForEachObj( pNtk, pObj, i )
+        pObj->pCopy = NULL;
+    pNtk->pCopy = NULL;
+    if ( vSwitching )
+        Vec_IntFree( vSwitching );
+    if ( pAig )
+        Aig_ManStop( pAig );
+    if ( pNtkStr )
+        Abc_NtkDelete( pNtkStr );
+    if ( pNtkDup )
+        Abc_NtkDelete( pNtkDup );
+    return vResult;
+}
+
+/**Function*************************************************************
+
   Synopsis    []
 
   Description []
@@ -317,4 +395,3 @@ void Abc_SclInsertBarBufs( Abc_Ntk_t * pNtk, Vec_Int_t * vBufs )
 
 
 ABC_NAMESPACE_IMPL_END
-

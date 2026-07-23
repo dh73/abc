@@ -105,6 +105,35 @@ Abc_Obj_t * Abc_SclFindMostCriticalFanin( SC_Man * p, int * pfRise, Abc_Obj_t * 
 
 /**Function*************************************************************
 
+  Synopsis    [Find the output pin represented by this mapped node.]
+
+  Description []
+               
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+static inline int Abc_SclObjOutputIndex( Abc_Obj_t * pObj, SC_Cell * pCell )
+{
+    Mio_Gate_t * pGate;
+    char * pOutName;
+    int i;
+    if ( pCell->n_outputs == 1 )
+        return 0;
+    pGate = (Mio_Gate_t *)pObj->pData;
+    assert( pGate != NULL );
+    pOutName = Mio_GateReadOutName( pGate );
+    assert( pOutName != NULL );
+    for ( i = 0; i < pCell->n_outputs; i++ )
+        if ( !strcmp( pOutName, SC_CellPinName(pCell, pCell->n_inputs + i) ) )
+            return i;
+    assert( 0 );
+    return 0;
+}
+
+/**Function*************************************************************
+
   Synopsis    [Printing timing information for the node/network.]
 
   Description []
@@ -299,10 +328,20 @@ static inline void Abc_SclDeptObj( SC_Man * p, Abc_Obj_t * pObj )
     SC_PairClean( Abc_SclObjDept(p, pObj) );
     Abc_ObjForEachFanout( pObj, pFanout, i )
     {
+        SC_Cell * pFanoutCell;
+        int iFanin, iOut;
         if ( Abc_ObjIsCo(pFanout) || Abc_ObjIsLatch(pFanout) )
             continue;
-        pTime = Scl_CellPinTime( Abc_SclObjCell(pFanout), Abc_NodeFindFanin(pFanout, pObj) );
-        Abc_SclDeptFanin( p, pTime, pFanout, pObj, Abc_NodeFindFanin(pFanout, pObj) );
+        pFanoutCell = Abc_SclObjCell( pFanout );
+        iFanin = Abc_NodeFindFanin( pFanout, pObj );
+        iOut = Abc_SclObjOutputIndex( pFanout, pFanoutCell );
+        pTime = Scl_CellPinOutTime( pFanoutCell, iOut, iFanin );
+        if ( pTime == NULL )
+        {
+            assert( pFanoutCell->n_outputs > 1 );
+            continue;
+        }
+        Abc_SclDeptFanin( p, pTime, pFanout, pObj, iFanin );
     }
 }
 static inline float Abc_SclObjLoadValue( SC_Man * p, Abc_Obj_t * pObj )
@@ -370,7 +409,13 @@ void Abc_SclTimeNode( SC_Man * p, Abc_Obj_t * pObj, int fDept )
     // compute for each fanin
     Abc_ObjForEachFanin( pObj, pFanin, k )
     {
-        pTime = Scl_CellPinTime( pCell, k );
+        int iOut = Abc_SclObjOutputIndex( pObj, pCell );
+        pTime = Scl_CellPinOutTime( pCell, iOut, k );
+        if ( pTime == NULL )
+        {
+            assert( pCell->n_outputs > 1 );
+            continue;
+        }
         if ( fDept )
             Abc_SclDeptFanin( p, pTime, pObj, pFanin, k );
         else
@@ -714,6 +759,92 @@ void Abc_SclTimePerform( SC_Lib * pLib, Abc_Ntk_t * pNtk, int nTreeCRatio, int f
         Abc_NtkDelete( pNtkNew );
 }
 
+/**Function*************************************************************
+
+  Synopsis    [Printing out power information for the network.]
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+static inline float Abc_SclPowerTableLookup( SC_Surface * p, float Slew, float Load )
+{
+    Vec_Flt_t * vRow;
+    int i, nSize0 = Vec_FltSize(&p->vIndex0);
+    int nSize1 = Vec_FltSize(&p->vIndex1);
+    if ( nSize0 == 0 || nSize1 == 0 || Vec_PtrSize(&p->vData) != nSize0 )
+        return 0;
+    Vec_PtrForEachEntry( Vec_Flt_t *, &p->vData, vRow, i )
+        if ( Vec_FltSize(vRow) != nSize1 )
+            return 0;
+    return Scl_LibLookup( p, Slew, Load );
+}
+void Abc_SclPowerPerformInt( SC_Lib * pLib, Abc_Ntk_t * pNtk, int nTreeCRatio, int fUseWireLoads, int nFrames, int nPref )
+{
+    SC_Man * p;
+    Vec_Flt_t * vSwitching;
+    Abc_Obj_t * pObj, * pFanin;
+    double StaticPower = 0, InternalPower = 0, ExternalPower = 0, DynamicPower = 0;
+    double TotalPower, TotalPowerAbs;
+    int i, k, nPowerArcs = 0;
+    p = Abc_SclManStart( pLib, pNtk, fUseWireLoads, 0, 0, nTreeCRatio );
+    vSwitching = Abc_SclComputeSwitching( pNtk, nFrames, nPref );
+    Abc_NtkForEachNodeNotBarBuf1( pNtk, pObj, i )
+    {
+        SC_Cell * pCell = Abc_SclObjCell( pObj );
+        int iOut = Abc_SclObjOutputIndex( pObj, pCell );
+        if ( !Abc_SclObjIsSecondTwin(pObj) )
+            StaticPower += pCell->leakage;
+        Abc_ObjForEachFanin( pObj, pFanin, k )
+        {
+            SC_Timing * pTime = Scl_CellPinOutTime( pCell, iOut, k );
+            SC_Pair * pLoad = Abc_SclObjLoad( p, pObj );
+            SC_Pair * pSlew = Abc_SclObjSlew( p, pFanin );
+            float Switch = Vec_FltEntry( vSwitching, Abc_ObjId(pFanin) );
+            float RisePower, FallPower;
+            if ( pTime == NULL )
+            {
+                assert( pCell->n_outputs > 1 );
+                continue;
+            }
+            RisePower = Abc_SclPowerTableLookup( &pTime->pRisePower, pSlew->rise, pLoad->rise );
+            FallPower = Abc_SclPowerTableLookup( &pTime->pFallPower, pSlew->fall, pLoad->fall );
+            RisePower = Abc_MaxFloat( 0, RisePower );
+            FallPower = Abc_MaxFloat( 0, FallPower );
+            if ( RisePower == 0 && FallPower == 0 )
+                continue;
+            InternalPower += Switch * 0.5 * (RisePower + FallPower);
+            nPowerArcs++;
+        }
+        ExternalPower += Vec_FltEntry( vSwitching, Abc_ObjId(pObj) ) * 0.5 * Abc_SclObjLoadAve(p, pObj) * pLib->nom_voltage * pLib->nom_voltage;
+    }
+    DynamicPower = InternalPower + ExternalPower;
+    TotalPower = StaticPower + DynamicPower;
+    TotalPowerAbs = fabs(StaticPower) + fabs(DynamicPower);
+    Abc_Print( 1, "WireLoad = \"%s\"  ",        p->pWLoadUsed ? p->pWLoadUsed->pName : "none" );
+    Abc_Print( 1, "Frames = %d  Prefix = %d  ",  nFrames, nPref );
+    Abc_Print( 1, "Power = %.6g  ",              TotalPower );
+    Abc_Print( 1, "Static = %.6g (%5.1f %%)  ",  StaticPower,  100.0 * StaticPower  / Abc_MaxDouble(1.0, TotalPowerAbs) );
+    Abc_Print( 1, "Dynamic = %.6g (%5.1f %%)  ", DynamicPower, 100.0 * DynamicPower / Abc_MaxDouble(1.0, TotalPowerAbs) );
+    Abc_Print( 1, "Internal = %.6g  ",           InternalPower );
+    Abc_Print( 1, "External = %.6g  ",           ExternalPower );
+    Abc_Print( 1, "Arcs = %d\n",                 nPowerArcs );
+    Vec_FltFree( vSwitching );
+    Abc_SclManFree( p );
+}
+void Abc_SclPowerPerform( SC_Lib * pLib, Abc_Ntk_t * pNtk, int nTreeCRatio, int fUseWireLoads, int nFrames, int nPref )
+{
+    Abc_Ntk_t * pNtkNew = pNtk;
+    if ( pNtk->nBarBufs2 > 0 )
+        pNtkNew = Abc_NtkDupDfsNoBarBufs( pNtk );
+    Abc_SclPowerPerformInt( pLib, pNtkNew, nTreeCRatio, fUseWireLoads, nFrames, nPref );
+    if ( pNtk->nBarBufs2 > 0 )
+        Abc_NtkDelete( pNtkNew );
+}
+
 
 
 /**Function*************************************************************
@@ -927,5 +1058,3 @@ void Abc_SclPrintBuffers( SC_Lib * pLib, Abc_Ntk_t * pNtk, int fVerbose )
 
 
 ABC_NAMESPACE_IMPL_END
-
-

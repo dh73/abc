@@ -167,6 +167,9 @@ void Cec_ManCecSetDefaultParams( Cec_ParCec_t * p )
     p->fVeryVerbose   =       0;  // verbose stats
     p->fVerbose       =       0;  // verbose stats
     p->iOutFail       =      -1;  // the number of failed output
+    p->pNameSpec      =    NULL;  // name of the first (spec) network
+    p->pNameImpl      =    NULL;  // name of the second (impl) network
+    p->vNamesIn       =    NULL;  // input names of the first network
 }  
 
 /**Function*************************************************************
@@ -192,6 +195,7 @@ void Cec_ManCorSetDefaultParams( Cec_ParCor_t * p )
     p->fLatchCorr     =       0;  // consider only latch outputs
     p->fConstCorr     =       0;  // consider only constants
     p->fUseRings      =       1;  // combine classes into rings
+    p->fSkipFailResim =       0;  // skip resim when a round has no real CEX (only timeout/fail)
     p->fUseCSat       =       1;  // use circuit-based solver
 //    p->fFirstStop     =       0;  // stop on the first sat output
     p->fUseSmartCnf   =       0;  // use smart CNF computation
@@ -569,4 +573,3 @@ finalize:
 
 
 ABC_NAMESPACE_IMPL_END
-

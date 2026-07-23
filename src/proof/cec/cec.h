@@ -140,6 +140,9 @@ struct Cec_ParCec_t_
     int              fVeryVerbose;  // verbose stats
     int              fVerbose;      // verbose stats
     int              iOutFail;      // the number of failed output
+    const char *     pNameSpec;     // name of the first (spec) network
+    const char *     pNameImpl;     // name of the second (impl) network
+    Vec_Ptr_t *      vNamesIn;      // input names of the first network
 };
 
 // sequential register correspodence parameters
@@ -164,6 +167,10 @@ struct Cec_ParCor_t_
 //    int              fFirstStop;    // stop on the first sat output
     int              fUseSmartCnf;  // use smart CNF computation
     int              fStopWhenGone; // quit when PO is not a candidate constant
+    int              fIncremental;  // integrated incremental mode for &scorr
+    int              fIncrSim;      // persistent CEX-TFO-only resimulation after SAT
+    int              fDynSrm;       // persistent dynamic SRM and true-unroll resimulation
+    int              fSkipFailResim;// skip resim in rounds with no real CEX (only timeout/fail)
     int              fVerboseFlops; // verbose stats
     int              fVeryVerbose;  // verbose stats
     int              fVerbose;      // verbose stats
@@ -273,4 +280,3 @@ ABC_NAMESPACE_HEADER_END
 ////////////////////////////////////////////////////////////////////////
 ///                       END OF FILE                                ///
 ////////////////////////////////////////////////////////////////////////
-

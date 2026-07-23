@@ -639,7 +639,9 @@ static inline int Sbl_CutIsFeasible( word CutI1, word CutI2, word CutN1, word Cu
     CutI1 &= CutI1-1; CutI2 &= CutI2-1;   CutN1 &= CutN1-1; CutN2 &= CutN2-1;   Count += (CutI1 != 0) + (CutI2 != 0) + (CutN1 != 0) + (CutN2 != 0);
     if ( LutSize <= 4 )
         return Count <= 4;
-    CutI1 &= CutI1-1; CutI2 &= CutI2-1;   CutN1 &= CutN1-1; CutN2 &= CutN2-1;   Count += (CutI1 != 0) + (CutI2 != 0) + (CutN1 != 0) + (CutN2 != 0);  
+    CutI1 &= CutI1-1; CutI2 &= CutI2-1;   CutN1 &= CutN1-1; CutN2 &= CutN2-1;   Count += (CutI1 != 0) + (CutI2 != 0) + (CutN1 != 0) + (CutN2 != 0);
+    if ( LutSize <= 5 )
+        return Count <= 5;
     CutI1 &= CutI1-1; CutI2 &= CutI2-1;   CutN1 &= CutN1-1; CutN2 &= CutN2-1;   Count += (CutI1 != 0) + (CutI2 != 0) + (CutN1 != 0) + (CutN2 != 0);
     return Count <= 6;
 }
@@ -1033,7 +1035,7 @@ int Sbl_ManTestSat( Sbl_Man_t * p, int iPivot )
 
     StartSol = Vec_IntSize(p->vSolInit) + 1;
 //    StartSol = 30;
-    while ( fKeepTrying && StartSol-fKeepTrying > 0 )
+    while ( fKeepTrying && StartSol-fKeepTrying > 0 && StartSol-fKeepTrying < Vec_IntSize(p->vCardVars) )
     {
         int Count = 0, LitCount = 0;
         int nConfBef, nConfAft;

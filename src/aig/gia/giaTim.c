@@ -77,7 +77,8 @@ int Gia_ManClockDomainNum( Gia_Man_t * p )
     if ( p->vRegClasses == NULL )
         return 0;
     nDoms = Vec_IntFindMax(p->vRegClasses);
-    assert( Vec_IntCountEntry(p->vRegClasses, 0) == 0 );
+    // Class 0 is now allowed - means unmergeable flops not in any clock domain
+    // assert( Vec_IntCountEntry(p->vRegClasses, 0) == 0 );
     for ( i = 1; i <= nDoms; i++ )
         if ( Vec_IntCountEntry(p->vRegClasses, i) > 0 )
             Count++;
@@ -372,8 +373,14 @@ Vec_Int_t * Gia_ManOrderWithBoxes( Gia_Man_t * p )
 
   Synopsis    [Duplicates AIG according to the timing manager.]
 
-  Description []
-               
+  Description [Converts a normalized AIG to unnormalized form for box processing.
+               In normalized AIG: CIs are ordered as PIs + BoxOutputs + FlopOutputs
+               In unnormalized AIG: CIs are ordered as PIs + FlopOutputs only,
+               with BoxOutputs spread throughout the AIG in topological order.
+               This transformation allows proper timing-aware processing of boxes.
+               For sequential AIGs, flop count is preserved, with flop outputs
+               remaining as CIs and flop inputs as COs.]
+
   SideEffects []
 
   SeeAlso     []
@@ -1122,6 +1129,16 @@ int Gia_ManVerifyWithBoxes( Gia_Man_t * pGia, int nBTLimit, int nTimeLim, int fS
     // compute the miter
     if ( fSeq )
     {
+        extern Gia_Man_t * Gia_ManDupAddFlop( Gia_Man_t * p );
+        if ( Gia_ManRegNum(pGia0) == 0 ) {
+            pGia0 = Gia_ManDupAddFlop( pMiter = pGia0 );
+            Gia_ManStop( pMiter );
+        }
+        if ( Gia_ManRegNum(pGia1) == 0 ) {
+            pGia1 = Gia_ManDupAddFlop( pMiter = pGia1 );
+            Gia_ManStop( pMiter );
+        }
+        
         pMiter = Gia_ManMiter( pGia0, pGia1, 0, 0, 1, 0, fVerbose );
         if ( pMiter )
         {
